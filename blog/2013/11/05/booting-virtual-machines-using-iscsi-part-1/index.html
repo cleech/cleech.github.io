@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Booting Virtual Machines Using iSCSI: part 1 - Chris Leech</title>
+  <meta name="author" content="Chris Leech">
+
+  
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1">
+  <link href="/favicon.png" type="image/png" rel="icon">
+  <link href="/atom.xml" rel="alternate" title="Chris Leech" type="application/atom+xml">
+
+  <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.1/css/bootstrap.min.css">
+<link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.1/css/bootstrap-theme.min.css">
+<link rel="stylesheet" href="//netdna.bootstrapcdn.com/font-awesome/4.0.1/css/font-awesome.css">
+<link href="/stylesheets/custom/bootstrap-custom.css" rel="stylesheet">
+<link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet">
+
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+  
+
+</head>
+
+  <body   >
+    <div id="wrap">
+      <header role="banner">
+        <nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="/">Chris Leech</a>
+            <!--
+	    <a class="navbar-brand" href="/"><i class="fa fa-home fa-lg"></i></a>
+             -->
+        </div>
+
+        <div class="navbar-collapse collapse">
+            <ul class="nav navbar-nav">
+                <li class="active">
+                    <a href="/">Blog</a>
+                </li>
+                <li >
+                    <a href="/blog/archives">Archives</a>
+                </li>
+            </ul>
+            <ul class="nav navbar-nav navbar-right">
+                <li>
+                    <a class="subscribe-rss" href="/atom.xml" title="subscribe via RSS">
+                        <span class="visible-xs">RSS</span>
+			<i class="fa fa-rss fa-lg" alt="RSS"></i>
+                    </a>
+                </li>
+                
+                <li>
+		    <a class="social-twitter" href="https://twitter.com/chrisleech" title="Twitter">
+                        <span class="visible-xs">Twitter</span>
+			<i class="fa fa-twitter fa-lg" alt="Twitter"></i>
+                    </a>
+                </li>
+		
+                
+                <li>
+		<a class="social-github" href="https://github.com/cleech" title="GitHub">
+                        <span class="visible-xs">GitHub</span>
+			<i class="fa fa-github fa-lg" alt="GitHub"></i>
+                    </a>
+                </li>
+		
+                
+                
+                <li>
+		<a class="social-google-plus" href="https://google.com/+ChrisLeech" title="Google+">
+                        <span class="visible-xs">Google+</span>
+			<i class="fa fa-google-plus-square fa-lg" alt="Google+"></i>
+                    </a>
+                </li>
+		
+		
+                
+            </ul>
+            
+                <form class="search navbar-form navbar-right" action="http://google.com/search" method="GET">
+                    <input type="hidden" name="q" value="site:cleech.github.io">
+                    <div class="form-group">
+                        <input class="form-control" type="text" name="q" placeholder="Search">
+                    </div>
+                </form>
+            
+        </div>
+    </div>
+</nav>
+
+
+      </header>
+      <div id="main" class="container">
+        <div id="content">
+          <div class="row">
+  <div class="page-content col-md-9">
+    <article class="hentry" role="article">
+      
+  <header class="page-header">
+    
+      <p class="meta text-muted text-uppercase">
+        
+
+
+
+
+
+
+
+
+
+
+
+
+<i class="fa fa-calendar"></i> <time datetime="2013-11-05T13:30:00-08:00" pubdate data-updated="true">Nov 5<span>th</span>, 2013</time>
+        
+      </p>
+    
+    
+    <h1 class="entry-title">
+        Booting Virtual Machines Using iSCSI: Part 1
+        
+	    <br/>
+            <small>
+                Preparing the Hypervisor and iSCSI Target
+            </small>
+        
+    </h1>
+    
+  </header>
+
+
+<div class="entry-content clearfix"><p>In the past year I&rsquo;ve discovered a need to be able to easily test iSCSI boot
+configurations, preferably without special hardware or dedicated storage
+arrays.  I&rsquo;ve come up with this solution for working with virtual machines to
+test OS installation and boot with iSCSI storage.  Obviously this doesn&rsquo;t
+replace the need to validate real iSCSI deployment scenarios &ndash; but it works for
+me to easily check installers, kernel iBFT support, initramfs implementations,
+and system init configuration for iSCSI root.</p>
+
+<p>I&rsquo;m currently using Fedora 19 as both my virtualization host and iSCSI target,
+with a variety of Linux distributions running in VMs (primarily multiple
+versions of Fedora and RHEL).</p>
+
+<!--more-->
+
+
+<hr />
+
+<h2>The Pieces</h2>
+
+<ul>
+<li>Hypervisor: KVM managed through libvirt / virt-manager</li>
+<li>Boot firmware: iPXE provides our pre-OS iSCSI stack</li>
+<li>iSCSI Initiator: Open-iSCSI, kernel modules + iscsid, iscsiadm tools</li>
+<li>iSCSI Target: LIO/TCM kernel target stack, managed via targetcli</li>
+<li>Volume Management: LVM2</li>
+<li>DHCP Server: ISC DHCP</li>
+</ul>
+
+
+<hr />
+
+<h2>Host Configuration Steps:</h2>
+
+<h3>LVM Storage Pool</h3>
+
+<p>We could work with disk images files, but because we want to access the storage
+directly using iSCSI they would have to be raw images and not qcow2 or any
+other specialized disk image format.  An LVM volume group seems like a better
+choice.  I like to make libvirt aware of my storage, so I can put all my VM
+volumes in one place and have the choice to either assign them through virtio
+channels or through iSCSI.</p>
+
+<div class="bs-callout bs-callout-danger">
+<h4>Data Destroying Operations</h4>
+<p>The following commands to set up a storage pool all require an unused
+physical disk partition, which will be formatted and any existing data will be
+erased.  The given commands match my configuration (creating an LVM physical
+volume on the first partition of a secondary disk: /dev/sdb1), any may be
+different from yours.  Be sure you know what you&#8217;re doing.</p>
+</div>
+
+
+<p>You can set this up using the virt-manager GUI:  <code>Edit > Connection Details > Storage > <i class="fa fa-plus"></i></code></p>
+
+<div class="row">
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/vmm-pool-1.png">
+</div>
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/vmm-pool-2.png">
+</div>
+</div>
+
+
+
+
+<div class="bs-callout bs-callout-warning">
+<h4>libvirt iSCSI pools</h4>
+<p>The iSCSI support in libvirt manages the initiator side of the connection on
+the VM host, allowing volumes to then be assigned to the VM over virtio.  This
+works fine for many setups, but the point here is to run the full iSCSI
+initiator stack in the VM.</p>
+</div>
+
+
+<p>You can also set this up using virsh:</p>
+
+<pre><code>$ virsh pool-create-as vg_guest_images logical - - /dev/sdb1 vg_guest_images /dev/vg_guest_images
+</code></pre>
+
+<p>Or, directly using lvm2 if you don&rsquo;t care about sharing the volume group with libvirt:</p>
+
+<pre><code>$ pvcreate /dev/sdb1
+$ vgcreate vg_guest_images /dev/sdb1
+</code></pre>
+
+<h3>iSCSI Target Configuration</h3>
+
+<p>We&rsquo;ll setup the basic iSCSI target configuration now, using targetcli.  For all
+of the target and initiator setups I&rsquo;ll be using iSCSI Qualified Names of the
+form iqn.1992-01.com.example:*</p>
+
+<p>First, start targetcli and create a new iSCSI target and target portal group.</p>
+
+<pre class="pre-x-scrollable">
+$ targetcli
+targetcli shell version 2.1.fb30
+Copyright 2011-2013 by Datera, Inc and others.
+For help on commands, type 'help'.
+
+/&gt; cd iscsi
+/iscsi&gt; create iqn.1992-01.com.example:target.0
+<span style="color:green;">Created target iqn.1992-01.com.example:target.0.</span>
+<span style="color:green;">Created TPG 1.</span>
+</pre>
+
+
+<p>Now I disable CHAP authentication for the target portal group, as I don&rsquo;t want
+to manage CHAP secrets for my test-bench setup.  I believe it can be made to
+work, but there&rsquo;s no way to save settings for iPXE short of creating custom
+boot ROM images for every VM, so the CHAP secrets would need to be passed in
+somehow (we&rsquo;ll see how to use DHCP for passing in settings to iPXE in a bit).</p>
+
+<pre class="pre-x-scrollable">
+/iscsi&gt; cd iqn.1992-01.com.example:target.0/tpg1
+/iscsi/iqn.19...target.0/tpg1&gt; set attribute authentication=0
+Parameter authentication is now '0'.
+</pre>
+
+
+<p>And create a network portal on our virtual network interface.</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19...target.0/tpg1&gt; cd portals
+/iscsi/iqn.19.../tpg1/portals&gt; create 192.168.122.1
+<span style="color:green;">Using default IP port 3260</span>
+<span style="color:green;">Created network portal 192.168.122.1:3260.</span>
+</pre>
+
+
+<p>Make sure the configuration is saved, and exit.</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19.../tpg1/portals&gt; cd /
+/&gt; ls
+o- / ..................................................................... [...]
+  o- <span style="color:blue;">backstores</span> <span style="color:blue;">..........................................................</span> [...]
+  | o- <span style="color:purple;">block</span> <span style="color:purple;">..............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">fileio</span> <span style="color:purple;">.............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">pscsi</span> <span style="color:purple;">..............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">ramdisk</span> <span style="color:purple;">............................................</span> [Storage Objects: 0]
+  o- <span style="color:blue;">iscsi</span> <span style="color:blue;">........................................................</span> [Targets: 1]
+  | o- <span style="color:purple;">iqn.1992-01.com.example:target.0</span> <span style="color:purple;">..............................</span> [TPGs: 1]
+  |   o- tpg1 ........................................... [no-gen-acls, no-auth]
+  |     o- <span style="color:blue;">acls</span> <span style="color:blue;">......................................................</span> [ACLs: 0]
+  |     o- <span style="color:blue;">luns</span> <span style="color:blue;">......................................................</span> [LUNs: 0]
+  |     o- <span style="color:blue;">portals</span> <span style="color:blue;">................................................</span> [Portals: 1]
+  |       o- <span style="color:purple;">192.168.122.1:3260</span> <span style="color:purple;">...........................................</span> [<span style="color:green;">OK</span>]
+  o- <span style="color:blue;">loopback</span> <span style="color:blue;">.....................................................</span> [Targets: 0]
+/&gt; saveconfig
+<span style="color:green;">Last 10 configs saved in /etc/target/backup.</span>
+<span style="color:green;">Configuration saved to /etc/target/saveconfig.json</span>
+/&gt; exit
+<span style="color:green;">Global pref auto_save_on_exit=true</span>
+<span style="color:green;">Last 10 configs saved in /etc/target/backup.</span>
+<span style="color:green;">Configuration saved to /etc/target/saveconfig.json</span>
+</pre>
+
+
+<h3>libvirt Network Configuration</h3>
+
+<p>The default libvirt network configuration is going to need some changes.  In
+order to make use of the iPXE boot ROM iSCSI support, we&rsquo;ll be disabling the
+DHCP server provided by the libvirt managed dnsmasq and running a dedicated
+DHCP server with a custom configuration.</p>
+
+<p><code>$ virsh net-edit default</code></p>
+
+<p>You should see the default network configuration that looks something like
+this:</p>
+
+<figure class='code'><figcaption class='panel-heading'><h3 class='panel-title'>network-default.xml</h3></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='xml'><span class='line'><span class="nt">&lt;network&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;name&gt;</span>default<span class="nt">&lt;/name&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;forward</span> <span class="na">mode=</span><span class="s">&#39;nat&#39;</span><span class="nt">/&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;bridge</span> <span class="na">name=</span><span class="s">&#39;virbr0&#39;</span> <span class="na">stp=</span><span class="s">&#39;on&#39;</span> <span class="na">delay=</span><span class="s">&#39;0&#39;</span> <span class="nt">/&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;ip</span> <span class="na">address=</span><span class="s">&#39;192.168.122.1&#39;</span> <span class="na">netmask=</span><span class="s">&#39;255.255.255.0&#39;</span><span class="nt">&gt;</span>
+</span><span class='line'>    <span class="nt">&lt;dhcp&gt;</span>
+</span><span class='line'>      <span class="nt">&lt;range</span> <span class="na">start=</span><span class="s">&#39;192.168.122.2&#39;</span> <span class="na">end=</span><span class="s">&#39;192.168.122.254&#39;</span> <span class="nt">/&gt;</span>
+</span><span class='line'>    <span class="nt">&lt;/dhcp&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;/ip&gt;</span>
+</span><span class='line'><span class="nt">&lt;/network&gt;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>delete the dhcp configuration, leaving something like this:</p>
+
+<figure class='code'><figcaption class='panel-heading'><h3 class='panel-title'>network-default.xml</h3></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='xml'><span class='line'><span class="nt">&lt;network&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;name&gt;</span>default<span class="nt">&lt;/name&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;forward</span> <span class="na">mode=</span><span class="s">&#39;nat&#39;</span><span class="nt">/&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;bridge</span> <span class="na">name=</span><span class="s">&#39;virbr0&#39;</span> <span class="na">stp=</span><span class="s">&#39;on&#39;</span> <span class="na">delay=</span><span class="s">&#39;0&#39;</span> <span class="nt">/&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;ip</span> <span class="na">address=</span><span class="s">&#39;192.168.122.1&#39;</span> <span class="na">netmask=</span><span class="s">&#39;255.255.255.0&#39;</span><span class="nt">&gt;</span>
+</span><span class='line'>  <span class="nt">&lt;/ip&gt;</span>
+</span><span class='line'><span class="nt">&lt;/network&gt;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>DHCP Server Configuration</h3>
+
+<p>Edit /etc/dhcp/dhcpd.conf and add the following content:</p>
+
+<figure class='code'><figcaption class='panel-heading'><h3 class='panel-title'>/etc/dhcp/dhcpd.conf</h3></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='bash'><span class='line'><span class="c">#</span>
+</span><span class='line'><span class="c"># DHCP Server Configuration file.</span>
+</span><span class='line'><span class="c">#   see /usr/share/doc/dhcp*/dhcpd.conf.sample</span>
+</span><span class='line'><span class="c">#   see dhcpd.conf(5) man page</span>
+</span><span class='line'><span class="c">#</span>
+</span><span class='line'>
+</span><span class='line'>option space ipxe;
+</span><span class='line'>option ipxe-encap-opts code <span class="nv">175</span> <span class="o">=</span> encapsulate ipxe;
+</span><span class='line'>option ipxe.keep-san code <span class="nv">8</span> <span class="o">=</span> unsigned integer 8;
+</span><span class='line'>option iscsi-initiator-iqn code <span class="nv">203</span> <span class="o">=</span> string;
+</span><span class='line'>
+</span><span class='line'><span class="c"># &quot;default&quot; network</span>
+</span><span class='line'>subnet 192.168.122.0 netmask 255.255.255.0 <span class="o">{</span>
+</span><span class='line'>  range 192.168.122.2 192.168.122.254;
+</span><span class='line'>  option routers 192.168.122.1;
+</span><span class='line'>  option domain-name-servers 192.168.122.1;
+</span><span class='line'>  option domain-name <span class="s2">&quot;example.com&quot;</span>;
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>group <span class="o">{</span>
+</span><span class='line'>  option root-path <span class="s2">&quot;iscsi:192.168.122.1::::iqn.1992-01.com.example:target.0&quot;</span>;
+</span><span class='line'>  option ipxe.keep-san 1;
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The first block of option commands prepares dhcpd to serve up some options that
+it doesn&rsquo;t know about by default.  Option 203 is used to inform a DHCP client
+of it&rsquo;s iSCSI Qualified Name, while the other commands allow us to use the iPXE
+specific keep-san directive.</p>
+
+<p>The subnet configuration block is our replacement for what was removed from the
+libvirt network configuration, optionally with an added domain name setting.</p>
+
+<p>The group is where we are going to add host setting for out iSCSI booting VMs.
+For now it sets the root-path option with the IP address and IQN of our iSCSI
+target, and enabled the iPXE keep-san option.  Those options will be shared by
+all iSCSI boot enabled VMs.</p>
+
+<div class="bs-callout bs-callout-warning">
+<h4>keep-san</h4>
+<p>The keep-san option is required during install, when we want iPXE to attach
+to the iSCSI target and then continue on to booting from an installer image.
+I&#8217;ve found that without it, the iPXE code will leave the iBFT table in RAM, but
+not reserve the region leaving it marked as usable.  At some point during
+install, that memory can be reused and the iBFT contents become corrupt.  For
+me that would happen during filesystem creation, just before package
+installation, and when anaconda would attempt to verify the network settings it
+would result in the network interface going offline at a critical moment.</p>
+</div>
+
+
+<hr />
+
+<p>In the next post I&rsquo;ll walk through using this setup, creating a storage volume
+in our iSCSI target and installing an OS to in from within a VM.</p>
+
+<hr />
+
+<p><small>
+Additional References:</p>
+
+<ul>
+<li>LVM2 and libvirt Storage Pools
+
+<ul>
+<li><a href="http://docs.fedoraproject.org/en-US/Fedora/14/html/Storage_Administration_Guide/ch-lvm.html">http://docs.fedoraproject.org/en-US/Fedora/14/html/Storage_Administration_Guide/ch-lvm.html</a></li>
+<li><a href="http://docs.fedoraproject.org/en-US/Fedora/18/html/Virtualization_Administration_Guide/chap-Virtualization_Administration_Guide-Storage_Pools-Storage_Pools.html#sect-Virtualization-Storage_Pools-Creating-LVM">http://docs.fedoraproject.org/en-US/Fedora/18/html/Virtualization_Administration_Guide/chap-Virtualization_Administration_Guide-Storage_Pools-Storage_Pools.html#sect-Virtualization-Storage_Pools-Creating-LVM</a></li>
+<li><a href="http://libvirt.org/formatstorage.html">http://libvirt.org/formatstorage.html</a></li>
+</ul>
+</li>
+<li>iPXE Options via DHCP
+
+<ul>
+<li><a href="http://ipxe.org/howto/dhcpd">http://ipxe.org/howto/dhcpd</a></li>
+</ul>
+</li>
+<li>iSCSI Target Core and targetcli
+
+<ul>
+<li><a href="http://linux-iscsi.org/wiki/Main_Page">http://linux-iscsi.org/wiki/Main_Page</a></li>
+<li><a href="http://groveronline.com/tag/targetcli/">http://groveronline.com/tag/targetcli/</a>
+</small></li>
+</ul>
+</li>
+</ul>
+
+</div>
+
+
+      <footer>
+        <p class="meta text-muted">
+          
+  
+
+<i class="fa fa-user"></i> <span class="byline author vcard">Posted by <span class="fn">Chris Leech</span></span>
+
+          
+
+
+
+
+
+
+
+
+
+
+
+
+<i class="fa fa-calendar"></i> <time datetime="2013-11-05T13:30:00-08:00" pubdate data-updated="true">Nov 5<span>th</span>, 2013</time>
+          
+
+<br />
+<i class="fa fa-tags"></i>&nbsp;
+<span class="categories">
+  
+    <a class='category label label-primary' href='/blog/categories/dhcp/'>dhcp</a> <a class='category label label-primary' href='/blog/categories/ipxe/'>ipxe</a> <a class='category label label-primary' href='/blog/categories/iscsi/'>iscsi</a> <a class='category label label-primary' href='/blog/categories/libvirt/'>libvirt</a> <a class='category label label-primary' href='/blog/categories/linux/'>linux</a> <a class='category label label-primary' href='/blog/categories/targetcli/'>targetcli</a>
+  
+</span>
+
+
+        </p>
+	
+	  
+        
+            
+            
+        
+
+
+
+
+
+
+        
+
+
+
+
+
+
+<div class="cc-license">
+    <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/deed.en_US">
+        <img alt="Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License" src="http://i.creativecommons.org/l/by-nc-sa/3.0/80x15.png" />
+    </a><br />
+    This work is licensed under a
+    <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/3.0/deed.en_US">Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License</a>.
+</div>
+
+	
+        
+          <div class="sharing">
+  <b>Share This: &nbsp;</b>
+  
+    <a href="//twitter.com/share" class="twitter-share-button" data-url="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/" data-via="chrisleech" data-counturl="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/" >Tweet</a>
+  
+  
+    <div class="g-plusone" data-size="medium"></div>
+  
+  
+    <div class="fb-like" data-colorscheme="light" data-layout="button_count" data-action="like" data-show-faces="false" data-send="false"></div>
+  
+  
+    <script type="IN/Share" data-counter="right"></script>
+  
+</div>
+
+        
+        
+          <ul class="meta text-muted pager">
+            
+            
+            <li class="next"><a href="/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2/" title="Next Post: Booting Virtual Machines Using iSCSI: part 2">Booting Virtual Machines Using iSCSI: part 2 &raquo;</a></li>
+            
+          </ul>
+        
+      </footer>
+    </article>
+    
+      <section>
+        <h1>Comments</h1>
+        <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+      </section>
+    
+  </div>
+
+  
+  <aside class="sidebar col-md-3 hidden-xs hidden-sm">
+    
+      <section class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">Recent Posts</h3>
+  </div>
+  
+  <div id="recent_posts" class="list-group">
+    
+    <a class="list-group-item " href="/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2/">Booting Virtual Machines Using iSCSI: Part 2</a>
+    
+    <a class="list-group-item active" href="/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/">Booting Virtual Machines Using iSCSI: Part 1</a>
+    
+  </div>
+</section>
+<section class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">Categories</h3>
+  </div>
+  <div class="list-group">
+    
+    
+    <a class="list-group-item " href="/blog/categories/dhcp/index.html">
+        <span class="badge">2</span>
+        dhcp
+      </a>
+    
+    
+    <a class="list-group-item " href="/blog/categories/ipxe/index.html">
+        <span class="badge">2</span>
+        ipxe
+      </a>
+    
+    
+    <a class="list-group-item " href="/blog/categories/iscsi/index.html">
+        <span class="badge">2</span>
+        iscsi
+      </a>
+    
+    
+    <a class="list-group-item " href="/blog/categories/libvirt/index.html">
+        <span class="badge">2</span>
+        libvirt
+      </a>
+    
+    
+    <a class="list-group-item " href="/blog/categories/linux/index.html">
+        <span class="badge">2</span>
+        linux
+      </a>
+    
+    
+    <a class="list-group-item " href="/blog/categories/targetcli/index.html">
+        <span class="badge">2</span>
+        targetcli
+      </a>
+    
+  </div>
+</section>
+
+    
+  </aside>
+  
+</div>
+
+        </div>
+      </div>
+    </div>
+    <footer role="contentinfo"><nav class="navbar navbar-inverse">
+    <div class="container">
+<p class="navbar-text credits">
+  Copyright &copy; 2013 - Chris Leech
+</p>
+<p class="collapse navbar-collapse navbar-text pull-right credits">
+  <small>Powered by <a href="http://octopress.org">Octopress</a></small>
+</p>
+</div>
+
+</nav>
+</footer>
+    <script src="//netdna.bootstrapcdn.com/bootstrap/3.0.1/js/bootstrap.min.js"></script>
+<script src="/javascripts/modernizr-2.0.js"></script>
+
+
+<script type="text/javascript">
+      var disqus_shortname = 'hirudinean';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/';
+        var disqus_url = 'http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = ('https:' == document.location.protocol ? 'https://' : 'http://') + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+<div id="fb-root"></div>
+<script>(function(d, s, id) {
+  var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) return;
+  js = d.createElement(s); js.id = id;
+  js.src = "//connect.facebook.net/en_US/all.js#xfbml=1";
+  fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));</script>
+
+
+
+  <script type="text/javascript">
+    (function() {
+      var script = document.createElement('script'); script.type = 'text/javascript'; script.async = true;
+      script.src = 'https://apis.google.com/js/plusone.js';
+      var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(script, s);
+    })();
+  </script>
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+<script src="//platform.linkedin.com/in.js" type="text/javascript">
+ lang: en_US
+</script>
+
+
+
+
+
+  </body>
+</html>

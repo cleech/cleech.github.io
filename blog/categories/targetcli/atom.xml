@@ -1,0 +1,555 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: targetcli | Chris Leech]]></title>
+  <link href="http://cleech.github.io/blog/categories/targetcli/atom.xml" rel="self"/>
+  <link href="http://cleech.github.io/"/>
+  <updated>2013-11-05T13:32:01-08:00</updated>
+  <id>http://cleech.github.io/</id>
+  <author>
+    <name><![CDATA[Chris Leech]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Booting Virtual Machines Using iSCSI: part 2]]></title>
+    <link href="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2/"/>
+    <updated>2013-11-05T13:30:00-08:00</updated>
+    <id>http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2</id>
+    <content type="html"><![CDATA[<p>After going to all the trouble to get our specialized host configuration set,
+let&rsquo;s see what creating a new iSCSI booting VM looks like.  I&rsquo;ll be using
+virt-manager as the primary interface into libvirt for all of this, and
+installing Fedora 19 as the guest OS.</p>
+
+<!--more-->
+
+
+<hr />
+
+<h2>Guest Setup:</h2>
+
+<h3>Create a New VM</h3>
+
+<div class="row">
+<br />
+<p class="col-md-12">Setup a new VM, installing from an ISO image.</p>
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/preinstall-1.png">
+</div>
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/preinstall-2.png">
+</div>
+</div>
+
+
+
+
+<div class="row">
+<br />
+<p class="col-md-12">At step 4 things get interesting, disable all libvirt
+managed storage. In step 5, make sure to check "customize configuration before
+install" so we can do some further preparation.</p>
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/preinstall-4.png">
+</div>
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/preinstall-5.png">
+</div>
+</div>
+
+
+
+
+<div class="row">
+<br />
+<p class="col-md-12">Make note of the MAC address</p>
+<div class="col-md-12">
+<img src="/images/booting-virtual-machines-using-iscsi/preinstall-6.png">
+</div>
+<br />
+<p class="col-md-12">and set the boot device order to "Network (PXE)" only</p>
+<div class="col-md-12">
+<img src="/images/booting-virtual-machines-using-iscsi/preinstall-7.png">
+</div>
+</div>
+
+
+<h3>Create the Logic Volume for the VM</h3>
+
+<p>Use virt-manager:</p>
+
+<p><code>Edit &gt; Connection Details &gt; Storage &gt; New Volume</code></p>
+
+<p>or virsh:</p>
+
+<p><code>$ virsh vol-create-as vg_guest_images Fedora-19 10G</code></p>
+
+<p>or lvm:</p>
+
+<p><code>$ lvcreate --size 10G --name Fedora-19 vg_guest_images</code></p>
+
+<h3>Assign Storage in the iSCSI Target</h3>
+
+<p>assign the LV to the target core as a block backstore</p>
+
+<pre class="pre-x-scrollable">
+$ targetcli
+targetcli shell version 2.1.fb30
+Copyright 2011-2013 by Datera, Inc and others.
+For help on commands, type 'help'.
+
+/&gt; cd backstores/block
+/backstores/block&gt; create dev=/dev/vg_guest_images/Fedora-19 name=Fedora-19
+<span style="color:green;">Created block storage object Fedora-19 using /dev/vg_guest_images/Fedora-19.</span>
+</pre>
+
+
+<p>create a logical unit in the iSCSI target from the backstore</p>
+
+<pre class="pre-x-scrollable">
+/backstores/block&gt; cd /iscsi/iqn.1992-01.com.example:target.0/tpg1/luns
+/iscsi/iqn.19...t.0/tpg1/luns&gt; create storage_object=/backstores/block/Fedora-19
+<span style="color:green;">Created LUN 0.</span>
+</pre>
+
+
+<p>create an access control list entry for the guest iSCSI initiator</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19...t.0/tpg1/luns&gt; cd ../acls
+/iscsi/iqn.19...t.0/tpg1/acls&gt; create wwn=iqn.1992-01.com.example:Fedora-19
+<span style="color:green;">Created Node ACL for iqn.1992-01.com.example:Fedora-19</span>
+</pre>
+
+
+<p>assign the logical unit to the initiator</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19...t.0/tpg1/acls&gt; cd iqn.1992-01.com.example:Fedora-19
+/iscsi/iqn.19...ple:Fedora-19&gt; create mapped_lun=0 tpg_lun_or_backstore=0
+<span style="color:green;">Created Mapped LUN 0.</span>
+</pre>
+
+
+<p>the final target config should look about like this</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19...ple:Fedora-19&gt; cd /
+/&gt; ls
+o- / ..................................................................... [...]
+  o- <span style="color:blue;">backstores</span> <span style="color:blue;">..........................................................</span> [...]
+  | o- <span style="color:purple;">block</span> <span style="color:purple;">..............................................</span> [Storage Objects: 1]
+  | | o- <span style="">Fedora-19</span>  [<span style="color:green;">/dev/vg_guest_images/Fedora-19 (10.0GiB) write-thru activated</span>]
+  | o- <span style="color:purple;">fileio</span> <span style="color:purple;">.............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">pscsi</span> <span style="color:purple;">..............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">ramdisk</span> <span style="color:purple;">............................................</span> [Storage Objects: 0]
+  o- <span style="color:blue;">iscsi</span> <span style="color:blue;">........................................................</span> [Targets: 1]
+  | o- <span style="color:purple;">iqn.1992-01.com.example:target.0</span> <span style="color:purple;">..............................</span> [TPGs: 1]
+  |   o- <span style="">tpg1</span> ........................................... [no-gen-acls, no-auth]
+  |     o- <span style="color:blue;">acls</span> <span style="color:blue;">......................................................</span> [ACLs: 1]
+  |     | o- <span style="color:purple;">iqn.1992-01.com.example:Fedora-19</span> <span style="color:purple;">................</span> [Mapped LUNs: 1]
+  |     |   o- <span style="">mapped_lun0</span> ......................... [<span style="color:green;">lun0 block/Fedora-19 (rw)</span>]
+  |     o- <span style="color:blue;">luns</span> <span style="color:blue;">......................................................</span> [LUNs: 1]
+  |     | o- <span style="color:purple;">lun0</span> <span style="color:purple;">...........</span> [<span style="color:green;">block/Fedora-19 (/dev/vg_guest_images/Fedora-19)</span>]
+  |     o- <span style="color:blue;">portals</span> <span style="color:blue;">................................................</span> [Portals: 1]
+  |       o- <span style="color:purple;">192.168.122.1:3260</span> <span style="color:purple;">...........................................</span> [<span style="color:green;">OK</span>]
+  o- <span style="color:blue;">loopback</span> <span style="color:blue;">.....................................................</span> [Targets: 0]
+/&gt; exit
+<span style="color:green;">Global pref auto_save_on_exit=true</span>
+<span style="color:green;">Last 10 configs saved in /etc/target/backup.</span>
+<span style="color:green;">Configuration saved to /etc/target/saveconfig.json</span>
+</pre>
+
+
+<h3>Add a Host Entry in the DHCP Server</h3>
+
+<p>Add a host entry to the group section in the dhcpd configuration, connecting
+the MAC address created by libvirt with the iSCSI Qualified Name used in the
+target ACL.</p>
+
+<p>``` bash /etc/dhcp/dhcpd.conf
+group {</p>
+
+<pre><code>option root-path "iscsi:192.168.122.1::::iqn.1992-01.com.example:target.0";
+option ipxe.keep-san 1;
+
+host fedora-19 {
+    hardware ethernet 52:54:00:e0:c7:0b;
+    option iscsi-initiator-iqn "iqn.1992-01.com.example:Fedora-19";
+}
+</code></pre>
+
+<p>}
+```</p>
+
+<p>Restart dhcpd, which is the only way to get it to pickup changes to the config
+file.</p>
+
+<p><code>$ systemctl restart dhcpd.service</code></p>
+
+<h3>Continue the VM Install</h3>
+
+<p>Go back to virt-manager, and start the install.  It&rsquo;s important that the
+network boot code runs before loading the installer from the ISO image (to get
+the DHCP options, and populate the iBFT).  On first boot libvirt may skip the
+boot order setting and boot the install image directly, in which case the VM
+needs to be restarted.  Otherwise, the iSCSI connection information will not be
+set in the installer automatically.</p>
+
+<p>Hit TAB, and add &ldquo;ip=ibft&rdquo; to the command line before continuing.</p>
+
+<p><img src="/images/booting-virtual-machines-using-iscsi/install-1.png"></p>
+
+<div class="bs-callout bs-callout-warning">
+<h4>ip=ibft</h4>
+<p>Changes in the back-end iSCSI support for Anaconda resulted in the iSCSI
+Boot Firmware Table (iBFT) not being picked up automatically in Fedora 19.
+Setting the additional option "ip=ibft" on the command line forces iBFT
+detection on.</p>
+</div>
+
+
+<p>When you get to the storage selection, the iSCSI volume should be setup
+automatically.</p>
+
+<p><img src="/images/booting-virtual-machines-using-iscsi/install-2.png"></p>
+
+<p>Now just complete the installation and you should be good to go.</p>
+
+<div class="bs-callout bs-callout-warning">
+<h4>reinstalls</h4>
+<p>
+With this setup, we want iPXE to connect to the iSCSI volume first and then
+continue on to booting from the installer image.  That only works when the
+iSCSI volume has no valid boot record.  In order to reinstall to an initialized
+volume, it may be necessary to manually clear the master boot record and
+partition table.
+<code>$ dd if=/dev/zero of=/dev/vg_guest_images/Fedora-19 bs=1M count=1</code>
+</p>
+</div>
+
+
+<hr />
+
+<p><small></p>
+
+<h2>Future Enhancements</h2>
+
+<p>Obviously there are quiet a few manual steps involved for every VM install
+here.  Much of this can be automated.</p>
+
+<p>A few directions to look at are:</p>
+
+<ol>
+<li>Using libstoragemgmt and targetd instead of directly using lvm commands and targetcli.</li>
+<li>Using the OMAPI interface to dhcpd to create lease records with the appropriate options set in a running dhcpd process, instead of adding host records to dhcpd.conf and restarting dhcpd.service every time.</li>
+<li>Using virt-install and kickstart files to automate the actual VM setup and OS installation.
+</small></li>
+</ol>
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Booting Virtual Machines Using iSCSI: part 1]]></title>
+    <link href="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/"/>
+    <updated>2013-11-05T13:30:00-08:00</updated>
+    <id>http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1</id>
+    <content type="html"><![CDATA[<p>In the past year I&rsquo;ve discovered a need to be able to easily test iSCSI boot
+configurations, preferably without special hardware or dedicated storage
+arrays.  I&rsquo;ve come up with this solution for working with virtual machines to
+test OS installation and boot with iSCSI storage.  Obviously this doesn&rsquo;t
+replace the need to validate real iSCSI deployment scenarios &ndash; but it works for
+me to easily check installers, kernel iBFT support, initramfs implementations,
+and system init configuration for iSCSI root.</p>
+
+<p>I&rsquo;m currently using Fedora 19 as both my virtualization host and iSCSI target,
+with a variety of Linux distributions running in VMs (primarily multiple
+versions of Fedora and RHEL).</p>
+
+<!--more-->
+
+
+<hr />
+
+<h2>The Pieces</h2>
+
+<ul>
+<li>Hypervisor: KVM managed through libvirt / virt-manager</li>
+<li>Boot firmware: iPXE provides our pre-OS iSCSI stack</li>
+<li>iSCSI Initiator: Open-iSCSI, kernel modules + iscsid, iscsiadm tools</li>
+<li>iSCSI Target: LIO/TCM kernel target stack, managed via targetcli</li>
+<li>Volume Management: LVM2</li>
+<li>DHCP Server: ISC DHCP</li>
+</ul>
+
+
+<hr />
+
+<h2>Host Configuration Steps:</h2>
+
+<h3>LVM Storage Pool</h3>
+
+<p>We could work with disk images files, but because we want to access the storage
+directly using iSCSI they would have to be raw images and not qcow2 or any
+other specialized disk image format.  An LVM volume group seems like a better
+choice.  I like to make libvirt aware of my storage, so I can put all my VM
+volumes in one place and have the choice to either assign them through virtio
+channels or through iSCSI.</p>
+
+<div class="bs-callout bs-callout-danger">
+<h4>Data Destroying Operations</h4>
+<p>The following commands to set up a storage pool all require an unused
+physical disk partition, which will be formatted and any existing data will be
+erased.  The given commands match my configuration (creating an LVM physical
+volume on the first partition of a secondary disk: /dev/sdb1), any may be
+different from yours.  Be sure you know what you're doing.</p>
+</div>
+
+
+<p>You can set this up using the virt-manager GUI:  <code>Edit > Connection Details > Storage > <i class="fa fa-plus"></i></code></p>
+
+<div class="row">
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/vmm-pool-1.png">
+</div>
+<div class="col-md-6">
+<img src="/images/booting-virtual-machines-using-iscsi/vmm-pool-2.png">
+</div>
+</div>
+
+
+
+
+<div class="bs-callout bs-callout-warning">
+<h4>libvirt iSCSI pools</h4>
+<p>The iSCSI support in libvirt manages the initiator side of the connection on
+the VM host, allowing volumes to then be assigned to the VM over virtio.  This
+works fine for many setups, but the point here is to run the full iSCSI
+initiator stack in the VM.</p>
+</div>
+
+
+<p>You can also set this up using virsh:</p>
+
+<pre><code>$ virsh pool-create-as vg_guest_images logical - - /dev/sdb1 vg_guest_images /dev/vg_guest_images
+</code></pre>
+
+<p>Or, directly using lvm2 if you don&rsquo;t care about sharing the volume group with libvirt:</p>
+
+<pre><code>$ pvcreate /dev/sdb1
+$ vgcreate vg_guest_images /dev/sdb1
+</code></pre>
+
+<h3>iSCSI Target Configuration</h3>
+
+<p>We&rsquo;ll setup the basic iSCSI target configuration now, using targetcli.  For all
+of the target and initiator setups I&rsquo;ll be using iSCSI Qualified Names of the
+form iqn.1992-01.com.example:*</p>
+
+<p>First, start targetcli and create a new iSCSI target and target portal group.</p>
+
+<pre class="pre-x-scrollable">
+$ targetcli
+targetcli shell version 2.1.fb30
+Copyright 2011-2013 by Datera, Inc and others.
+For help on commands, type 'help'.
+
+/&gt; cd iscsi
+/iscsi&gt; create iqn.1992-01.com.example:target.0
+<span style="color:green;">Created target iqn.1992-01.com.example:target.0.</span>
+<span style="color:green;">Created TPG 1.</span>
+</pre>
+
+
+<p>Now I disable CHAP authentication for the target portal group, as I don&rsquo;t want
+to manage CHAP secrets for my test-bench setup.  I believe it can be made to
+work, but there&rsquo;s no way to save settings for iPXE short of creating custom
+boot ROM images for every VM, so the CHAP secrets would need to be passed in
+somehow (we&rsquo;ll see how to use DHCP for passing in settings to iPXE in a bit).</p>
+
+<pre class="pre-x-scrollable">
+/iscsi&gt; cd iqn.1992-01.com.example:target.0/tpg1
+/iscsi/iqn.19...target.0/tpg1&gt; set attribute authentication=0
+Parameter authentication is now '0'.
+</pre>
+
+
+<p>And create a network portal on our virtual network interface.</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19...target.0/tpg1&gt; cd portals
+/iscsi/iqn.19.../tpg1/portals&gt; create 192.168.122.1
+<span style="color:green;">Using default IP port 3260</span>
+<span style="color:green;">Created network portal 192.168.122.1:3260.</span>
+</pre>
+
+
+<p>Make sure the configuration is saved, and exit.</p>
+
+<pre class="pre-x-scrollable">
+/iscsi/iqn.19.../tpg1/portals&gt; cd /
+/&gt; ls
+o- / ..................................................................... [...]
+  o- <span style="color:blue;">backstores</span> <span style="color:blue;">..........................................................</span> [...]
+  | o- <span style="color:purple;">block</span> <span style="color:purple;">..............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">fileio</span> <span style="color:purple;">.............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">pscsi</span> <span style="color:purple;">..............................................</span> [Storage Objects: 0]
+  | o- <span style="color:purple;">ramdisk</span> <span style="color:purple;">............................................</span> [Storage Objects: 0]
+  o- <span style="color:blue;">iscsi</span> <span style="color:blue;">........................................................</span> [Targets: 1]
+  | o- <span style="color:purple;">iqn.1992-01.com.example:target.0</span> <span style="color:purple;">..............................</span> [TPGs: 1]
+  |   o- tpg1 ........................................... [no-gen-acls, no-auth]
+  |     o- <span style="color:blue;">acls</span> <span style="color:blue;">......................................................</span> [ACLs: 0]
+  |     o- <span style="color:blue;">luns</span> <span style="color:blue;">......................................................</span> [LUNs: 0]
+  |     o- <span style="color:blue;">portals</span> <span style="color:blue;">................................................</span> [Portals: 1]
+  |       o- <span style="color:purple;">192.168.122.1:3260</span> <span style="color:purple;">...........................................</span> [<span style="color:green;">OK</span>]
+  o- <span style="color:blue;">loopback</span> <span style="color:blue;">.....................................................</span> [Targets: 0]
+/&gt; saveconfig
+<span style="color:green;">Last 10 configs saved in /etc/target/backup.</span>
+<span style="color:green;">Configuration saved to /etc/target/saveconfig.json</span>
+/&gt; exit
+<span style="color:green;">Global pref auto_save_on_exit=true</span>
+<span style="color:green;">Last 10 configs saved in /etc/target/backup.</span>
+<span style="color:green;">Configuration saved to /etc/target/saveconfig.json</span>
+</pre>
+
+
+<h3>libvirt Network Configuration</h3>
+
+<p>The default libvirt network configuration is going to need some changes.  In
+order to make use of the iPXE boot ROM iSCSI support, we&rsquo;ll be disabling the
+DHCP server provided by the libvirt managed dnsmasq and running a dedicated
+DHCP server with a custom configuration.</p>
+
+<p><code>$ virsh net-edit default</code></p>
+
+<p>You should see the default network configuration that looks something like
+this:
+``` xml network-default.xml
+<network>
+  <name>default</name>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0' />
+  <ip address='192.168.122.1' netmask='255.255.255.0'></p>
+
+<pre><code>&lt;dhcp&gt;
+  &lt;range start='192.168.122.2' end='192.168.122.254' /&gt;
+&lt;/dhcp&gt;
+</code></pre>
+
+<p>  </ip>
+</network>
+```</p>
+
+<p>delete the dhcp configuration, leaving something like this:
+<code>xml network-default.xml
+&lt;network&gt;
+  &lt;name&gt;default&lt;/name&gt;
+  &lt;forward mode='nat'/&gt;
+  &lt;bridge name='virbr0' stp='on' delay='0' /&gt;
+  &lt;ip address='192.168.122.1' netmask='255.255.255.0'&gt;
+  &lt;/ip&gt;
+&lt;/network&gt;
+</code></p>
+
+<h3>DHCP Server Configuration</h3>
+
+<p>Edit /etc/dhcp/dhcpd.conf and add the following content:
+``` bash /etc/dhcp/dhcpd.conf
+#</p>
+
+<h1>DHCP Server Configuration file.</h1>
+
+<h1>see /usr/share/doc/dhcp*/dhcpd.conf.sample</h1>
+
+<h1>see dhcpd.conf(5) man page</h1>
+
+<p>#</p>
+
+<p>option space ipxe;
+option ipxe-encap-opts code 175 = encapsulate ipxe;
+option ipxe.keep-san code 8 = unsigned integer 8;
+option iscsi-initiator-iqn code 203 = string;</p>
+
+<h1>&ldquo;default&rdquo; network</h1>
+
+<p>subnet 192.168.122.0 netmask 255.255.255.0 {
+  range 192.168.122.2 192.168.122.254;
+  option routers 192.168.122.1;
+  option domain-name-servers 192.168.122.1;
+  option domain-name &ldquo;example.com&rdquo;;
+}</p>
+
+<p>group {
+  option root-path &ldquo;iscsi:192.168.122.1::::iqn.1992-01.com.example:target.0&rdquo;;
+  option ipxe.keep-san 1;
+}
+```</p>
+
+<p>The first block of option commands prepares dhcpd to serve up some options that
+it doesn&rsquo;t know about by default.  Option 203 is used to inform a DHCP client
+of it&rsquo;s iSCSI Qualified Name, while the other commands allow us to use the iPXE
+specific keep-san directive.</p>
+
+<p>The subnet configuration block is our replacement for what was removed from the
+libvirt network configuration, optionally with an added domain name setting.</p>
+
+<p>The group is where we are going to add host setting for out iSCSI booting VMs.
+For now it sets the root-path option with the IP address and IQN of our iSCSI
+target, and enabled the iPXE keep-san option.  Those options will be shared by
+all iSCSI boot enabled VMs.</p>
+
+<div class="bs-callout bs-callout-warning">
+<h4>keep-san</h4>
+<p>The keep-san option is required during install, when we want iPXE to attach
+to the iSCSI target and then continue on to booting from an installer image.
+I've found that without it, the iPXE code will leave the iBFT table in RAM, but
+not reserve the region leaving it marked as usable.  At some point during
+install, that memory can be reused and the iBFT contents become corrupt.  For
+me that would happen during filesystem creation, just before package
+installation, and when anaconda would attempt to verify the network settings it
+would result in the network interface going offline at a critical moment.</p>
+</div>
+
+
+<hr />
+
+<p>In the next post I&rsquo;ll walk through using this setup, creating a storage volume
+in our iSCSI target and installing an OS to in from within a VM.</p>
+
+<hr />
+
+<p><small>
+Additional References:</p>
+
+<ul>
+<li>LVM2 and libvirt Storage Pools
+
+<ul>
+<li><a href="http://docs.fedoraproject.org/en-US/Fedora/14/html/Storage_Administration_Guide/ch-lvm.html">http://docs.fedoraproject.org/en-US/Fedora/14/html/Storage_Administration_Guide/ch-lvm.html</a></li>
+<li><a href="http://docs.fedoraproject.org/en-US/Fedora/18/html/Virtualization_Administration_Guide/chap-Virtualization_Administration_Guide-Storage_Pools-Storage_Pools.html#sect-Virtualization-Storage_Pools-Creating-LVM">http://docs.fedoraproject.org/en-US/Fedora/18/html/Virtualization_Administration_Guide/chap-Virtualization_Administration_Guide-Storage_Pools-Storage_Pools.html#sect-Virtualization-Storage_Pools-Creating-LVM</a></li>
+<li><a href="http://libvirt.org/formatstorage.html">http://libvirt.org/formatstorage.html</a></li>
+</ul>
+</li>
+<li>iPXE Options via DHCP
+
+<ul>
+<li><a href="http://ipxe.org/howto/dhcpd">http://ipxe.org/howto/dhcpd</a></li>
+</ul>
+</li>
+<li>iSCSI Target Core and targetcli
+
+<ul>
+<li><a href="http://linux-iscsi.org/wiki/Main_Page">http://linux-iscsi.org/wiki/Main_Page</a></li>
+<li><a href="http://groveronline.com/tag/targetcli/">http://groveronline.com/tag/targetcli/</a>
+</small></li>
+</ul>
+</li>
+</ul>
+
+]]></content>
+  </entry>
+  
+</feed>
