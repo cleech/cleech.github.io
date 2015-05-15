@@ -2,10 +2,10 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
 
   <title><![CDATA[Chris Leech]]></title>
-  <link href="http://blog.hirudinean.org/atom.xml" rel="self"/>
-  <link href="http://blog.hirudinean.org/"/>
+  <link href="http://cleech.github.io/atom.xml" rel="self"/>
+  <link href="http://cleech.github.io/"/>
   <updated>2013-11-05T13:52:57-08:00</updated>
-  <id>http://blog.hirudinean.org/</id>
+  <id>http://cleech.github.io/</id>
   <author>
     <name><![CDATA[Chris Leech]]></name>
     
@@ -15,9 +15,9 @@
   
   <entry>
     <title type="html"><![CDATA[Booting Virtual Machines Using iSCSI: part 2]]></title>
-    <link href="http://blog.hirudinean.org/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2/"/>
+    <link href="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2/"/>
     <updated>2013-11-05T13:30:00-08:00</updated>
-    <id>http://blog.hirudinean.org/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2</id>
+    <id>http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-2</id>
     <content type="html"><![CDATA[<p>After going to all the trouble to get our specialized host configuration set,
 let&rsquo;s see what creating a new iSCSI booting VM looks like.  I&rsquo;ll be using
 virt-manager as the primary interface into libvirt for all of this, and
@@ -36,10 +36,10 @@ installing Fedora 19 as the guest OS.</p>
 <br />
 <p class="col-md-12">Setup a new VM, installing from an ISO image.</p>
 <div class="col-md-6">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/preinstall-1.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/preinstall-1.png">
 </div>
 <div class="col-md-6">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/preinstall-2.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/preinstall-2.png">
 </div>
 </div>
 
@@ -52,10 +52,10 @@ installing Fedora 19 as the guest OS.</p>
 managed storage. In step 5, make sure to check &#8220;customize configuration before
 install&#8221; so we can do some further preparation.</p>
 <div class="col-md-6">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/preinstall-4.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/preinstall-4.png">
 </div>
 <div class="col-md-6">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/preinstall-5.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/preinstall-5.png">
 </div>
 </div>
 
@@ -66,12 +66,12 @@ install&#8221; so we can do some further preparation.</p>
 <br />
 <p class="col-md-12">Make note of the MAC address</p>
 <div class="col-md-12">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/preinstall-6.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/preinstall-6.png">
 </div>
 <br />
 <p class="col-md-12">and set the boot device order to &#8220;Network (PXE)&#8221; only</p>
 <div class="col-md-12">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/preinstall-7.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/preinstall-7.png">
 </div>
 </div>
 
@@ -206,7 +206,7 @@ set in the installer automatically.</p>
 
 <p>Hit TAB, and add &ldquo;ip=ibft&rdquo; to the command line before continuing.</p>
 
-<p><img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/install-1.png"></p>
+<p><img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/install-1.png"></p>
 
 <div class="bs-callout bs-callout-warning">
 <h4>ip=ibft</h4>
@@ -220,7 +220,7 @@ detection on.</p>
 <p>When you get to the storage selection, the iSCSI volume should be setup
 automatically.</p>
 
-<p><img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/install-2.png"></p>
+<p><img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/install-2.png"></p>
 
 <p>Now just complete the installation and you should be good to go.</p>
 
@@ -260,9 +260,9 @@ here.  Much of this can be automated.</p>
   
   <entry>
     <title type="html"><![CDATA[Booting Virtual Machines Using iSCSI: part 1]]></title>
-    <link href="http://blog.hirudinean.org/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/"/>
+    <link href="http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1/"/>
     <updated>2013-11-05T13:30:00-08:00</updated>
-    <id>http://blog.hirudinean.org/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1</id>
+    <id>http://cleech.github.io/blog/2013/11/05/booting-virtual-machines-using-iscsi-part-1</id>
     <content type="html"><![CDATA[<p>In the past year I&rsquo;ve discovered a need to be able to easily test iSCSI boot
 configurations, preferably without special hardware or dedicated storage
 arrays.  I&rsquo;ve come up with this solution for working with virtual machines to
@@ -319,10 +319,10 @@ different from yours.  Be sure you know what you&#8217;re doing.</p>
 
 <div class="row">
 <div class="col-md-6">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/vmm-pool-1.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/vmm-pool-1.png">
 </div>
 <div class="col-md-6">
-<img src="http://blog.hirudinean.org/images/booting-virtual-machines-using-iscsi/vmm-pool-2.png">
+<img src="http://cleech.github.io/images/booting-virtual-machines-using-iscsi/vmm-pool-2.png">
 </div>
 </div>
 
